@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.zip
+*.mp4
 *.egg-info/
 .dist/
 build/
