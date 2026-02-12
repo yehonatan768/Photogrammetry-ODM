@@ -7,6 +7,18 @@ from src.pipeline.run import run_pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """
+    Build and return the CLI argument parser for the application.
+
+    This defines the command-line interface structure, including:
+      - global arguments (config path)
+      - subcommands (run)
+      - run-specific arguments (video, fps overrides, ODM options)
+
+    Returns:
+        argparse.ArgumentParser:
+            Fully configured argument parser.
+    """
     p = argparse.ArgumentParser(prog="Photogrammetry-ODM", description="Drone video -> frames -> ODM 3D model pipeline")
     p.add_argument("--config", type=str, default="configs/default.yaml", help="Path to YAML config")
 
@@ -25,6 +37,29 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_kv_list(kv_list):
+    """
+    Parse a list of key=value strings into a Python dictionary.
+
+    This is mainly used for the repeatable CLI argument:
+        --odm-opt key=value
+
+    Supported coercions:
+      - "true"/"false" -> bool
+      - integers -> int
+      - floats -> float
+      - otherwise remains string
+
+    Example:
+        ["dsm=true", "mesh_size=200000", "pc_quality=high"]
+
+    Returns:
+        dict:
+            Parsed dictionary of values with basic type inference.
+
+    Raises:
+        ValueError:
+            If any item does not contain '='.
+    """
     out = {}
     for item in kv_list or []:
         if "=" not in item:
@@ -47,6 +82,19 @@ def parse_kv_list(kv_list):
 
 
 def main():
+    """
+    Main entrypoint for the CLI application.
+
+    Workflow:
+      1. Parse CLI arguments
+      2. Validate config file exists
+      3. Load configuration from YAML into AppConfig
+      4. Setup global logging
+      5. Execute requested command (currently only "run")
+
+    Supported command:
+      - run: executes the full pipeline from video -> frames -> ODM outputs
+    """
     parser = build_parser()
     args = parser.parse_args()
 

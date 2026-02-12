@@ -12,6 +12,26 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class FrameExtractParams:
+    """
+    Parameters controlling video-to-frames extraction.
+
+    Attributes:
+        fps (float):
+            Frames per second to extract from the video.
+            Example: fps=2 extracts 2 frames per second.
+
+        max_frames (int):
+            Maximum number of frames to keep.
+            If 0, no limit is applied.
+
+        start_seconds (float):
+            Offset (in seconds) from the start of the video to begin extraction.
+            If 0, extraction starts from the beginning.
+
+        duration_seconds (float):
+            Duration (in seconds) of the video segment to extract frames from.
+            If 0, extraction continues until the end of the video.
+    """
     fps: float
     max_frames: int
     start_seconds: float
@@ -20,8 +40,36 @@ class FrameExtractParams:
 
 def extract_frames(video_path: Path, out_dir: Path, params: FrameExtractParams) -> Path:
     """
-    Extract frames using ffmpeg.
-    Output format: frame_000001.jpg, ...
+    Extract frames from a video file using ffmpeg.
+
+    Frames are written as sequential JPEG images in the output directory
+    using the naming pattern:
+
+        frame_000001.jpg
+        frame_000002.jpg
+        ...
+
+    The extraction is controlled by the FrameExtractParams object, which supports:
+      - start offset (-ss)
+      - duration (-t)
+      - fps filter (-vf fps=...)
+
+    After extraction, the function optionally limits the number of frames
+    using `_cap_frames()`.
+
+    Args:
+        video_path (Path):
+            Path to the input video file.
+
+        out_dir (Path):
+            Directory where extracted frames will be saved.
+
+        params (FrameExtractParams):
+            Extraction parameters (fps, max_frames, start_seconds, duration_seconds).
+
+    Returns:
+        Path:
+            The output directory containing extracted frames.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -49,6 +97,7 @@ def extract_frames(video_path: Path, out_dir: Path, params: FrameExtractParams) 
         str(out_pattern),
     ]
 
+    # Execute ffmpeg extraction command
     run_cmd(cmd)
 
     # Optionally cap number of frames
@@ -59,6 +108,27 @@ def extract_frames(video_path: Path, out_dir: Path, params: FrameExtractParams) 
 
 
 def _cap_frames(out_dir: Path, max_frames: int) -> None:
+    """
+    Remove frames beyond a maximum count.
+
+    This function scans the output directory for extracted frames,
+    sorts them in filename order, and deletes any frames after the
+    first `max_frames`.
+
+    This is useful when extracting at a high FPS but wanting to
+    limit the total number of frames passed into photogrammetry.
+
+    Args:
+        out_dir (Path):
+            Directory containing extracted frames.
+
+        max_frames (int):
+            Maximum number of frames to keep.
+            Any frames beyond this count are deleted.
+
+    Returns:
+        None
+    """
     frames = sorted(out_dir.glob("frame_*.jpg"))
     if len(frames) <= max_frames:
         return

@@ -1,40 +1,149 @@
+# ============================================================
+# Default configuration file for the Photogrammetry-ODM pipeline
+# ============================================================
+#
+# This YAML file defines the full configuration used by the project.
+# It is loaded by the Python config loader (load_config in config.py)
+# and converted into strongly-typed dataclasses.
+#
+# Sections:
+#   - project: project metadata (name, identifiers)
+#   - runtime: filesystem paths + logging settings
+#   - odm: NodeODM server settings and upload behavior
+#   - video: frame extraction parameters from the input video
+#   - odm_options: processing options passed directly into ODM/NodeODM
+#
+# Note:
+#   Most parameters have default fallback values in code, but this file
+#   is the main recommended way to control the pipeline behavior.
+# ============================================================
+
 project:
+  # Project name identifier.
+  # Used mainly for metadata, logging, and naming conventions.
   name: Photogrammetry-ODM
 
 runtime:
+  # Root folder where each pipeline run will create its own run directory.
+  # Example output:
+  #   runs/2026-02-12_14-00-12/
   runs_dir: runs
+
+  # Root data directory for intermediate and processed artifacts.
+  # This directory usually contains:
+  #   data/interim/
+  #   data/processed/
   data_dir: data
+
+  # Global logging verbosity level.
+  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_level: INFO
 
 odm:
+  # Name of the environment variable that can override the ODM host.
+  # If set, it will override host_default.
   host_env: ODM_HOST
-  # Single host example: "http://nodeodm:3000"
+
+  # Default NodeODM host URL.
+  # If you run NodeODM in Docker Compose, this will often be the service name.
+  #
+  # Single host example:
+  #   "http://nodeodm:3000"
+  #
   # Multiple hosts (comma-separated) enable basic load-balancing in the pipeline code:
   #   "http://nodeodm1:3000,http://nodeodm2:3000"
   host_default: "http://nodeodm:3000"
-  # With NVMe + local docker networking, higher parallel uploads can reduce idle time.
+
+  # Number of parallel image uploads to NodeODM.
+  # Higher values may speed up upload time, especially on NVMe SSDs,
+  # but can also increase RAM/CPU usage and networking overhead.
   parallel_uploads: 8
+
+  # How often (in seconds) the pipeline polls NodeODM for task status updates.
   poll_seconds: 10
 
 video:
+  # Frames-per-second rate for extracting frames from the drone video.
+  # Example:
+  #   fps: 2  -> extract 2 frames per second
   fps: 2
+
+  # Maximum number of frames to extract.
+  # If 0, it means "extract all frames" (no limit).
   max_frames: 0
+
+  # Time offset (seconds) into the video where extraction begins.
+  # Example:
+  #   start_seconds: 30 -> skip first 30 seconds of the video
   start_seconds: 0
+
+  # Duration (seconds) to extract frames for.
+  # If 0, it means "extract until the end of the video".
   duration_seconds: 0
 
 odm_options:
+  # ============================================================
+  # OpenDroneMap / NodeODM processing options
+  # ============================================================
+  #
+  # This section contains raw options passed directly into ODM.
+  # The keys must match ODM CLI option names.
+  #
+  # Examples:
+  #   dsm: true       -> generate Digital Surface Model
+  #   dtm: true       -> generate Digital Terrain Model
+  #   pc-ept: true    -> generate Entwine Point Tile (EPT) point cloud output
+  #   cog: true       -> generate Cloud-Optimized GeoTIFF
+  #   gltf: true      -> export 3D model as glTF
+  #
+  # For full list of supported ODM options, see ODM documentation.
+  # ============================================================
+
+  # Generate DSM (Digital Surface Model)
   dsm: true
+
+  # Generate DTM (Digital Terrain Model)
   dtm: false
+
+  # Export point cloud in Entwine Point Tiles format
   pc-ept: true
+
+  # Generate Cloud Optimized GeoTIFF outputs
   cog: true
+
+  # Export 3D model in glTF format
   gltf: true
 
-  # Performance tuning (64GB RAM):
-  # ODM uses ~1GB+ RAM per concurrency slot (varies by image size). Start conservative.
+  # ============================================================
+  # Performance tuning options
+  # ============================================================
+
+  # Maximum internal concurrency level used by ODM.
+  # Higher values increase speed but require more RAM.
+  #
+  # Rule of thumb:
+  #   ODM may use ~1GB+ RAM per concurrency slot (depends on dataset).
+  #
+  # Recommended approach:
+  #   Start conservative (6-8) and increase only if stable.
   max_concurrency: 12
 
-  # Quality/performance knobs
+  # ============================================================
+  # Quality vs performance tuning
+  # ============================================================
+
+  # Point cloud reconstruction quality level.
+  # Common values: low, medium, high, ultra
   pc_quality: high
+
+  # Feature extraction quality level.
+  # Higher improves reconstruction but costs more time.
   feature_quality: high
+
+  # Mesh complexity / triangle budget.
+  # Larger values improve model detail but increase processing time and output size.
   mesh_size: 200000
+
+  # Orthophoto output resolution in centimeters per pixel (or similar unit depending on ODM).
+  # Lower values = higher resolution (better quality, more compute).
   orthophoto_resolution: 5

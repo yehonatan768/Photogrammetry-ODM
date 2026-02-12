@@ -16,6 +16,26 @@ log = logging.getLogger(__name__)
 
 
 def _make_run_id(video_path: Path) -> str:
+    """
+    Generate a unique run identifier for the pipeline execution.
+
+    The run ID is based on:
+      - Current timestamp (YYYYMMDD_HHMMSS)
+      - A short SHA1 hash prefix of the input video file
+
+    This makes the run ID:
+      - mostly unique across executions
+      - still reproducible and traceable to the input video
+
+    Args:
+        video_path (Path):
+            Path to the input video file.
+
+    Returns:
+        str:
+            Run identifier string in the format:
+                run_<timestamp>_<hashprefix>
+    """
     # stable-ish id: timestamp + hash prefix
     ts = time.strftime("%Y%m%d_%H%M%S")
     h = sha1_file(video_path)[:10]
@@ -23,12 +43,55 @@ def _make_run_id(video_path: Path) -> str:
 
 
 def _merge_odm_options(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Merge ODM option dictionaries.
+
+    The function creates a shallow copy of the base dictionary and then
+    applies overrides from the extra dictionary.
+
+    Args:
+        base (Dict[str, Any]):
+            Base ODM options (typically from config YAML).
+
+        extra (Dict[str, Any]):
+            Extra ODM options (typically from CLI overrides).
+
+    Returns:
+        Dict[str, Any]:
+            Merged dictionary where values in `extra` override values in `base`.
+    """
     merged = dict(base)
     merged.update(extra or {})
     return merged
 
 
 def _copy_summary_outputs(odm_out_dir: Path, processed_dir: Path) -> None:
+    """
+    Copy selected important output artifacts into a processed directory.
+
+    This function provides a convenient way to collect the most useful
+    ODM output files into a single folder (data/processed/...).
+
+    Instead of copying the entire ODM output tree, it selectively copies
+    common high-value artifacts when they exist.
+
+    Typical artifacts include:
+      - orthophoto outputs (.tif / .png)
+      - DSM outputs
+      - georeferenced model outputs
+      - textured meshes
+      - reports
+
+    Args:
+        odm_out_dir (Path):
+            Directory containing downloaded NodeODM assets.
+
+        processed_dir (Path):
+            Destination directory where selected artifacts will be copied.
+
+    Returns:
+        None
+    """
     """
     Copy a few commonly-used artifacts into data/processed for convenience.
     We avoid being too opinionated: just copy entire directory if you want,
@@ -66,6 +129,64 @@ def run_pipeline(
     odm_extra_options: Optional[Dict[str, Any]] = None,
     copy_processed: bool = True,
 ) -> None:
+    """
+    Run the full end-to-end photogrammetry pipeline using NodeODM.
+
+    Pipeline stages:
+        1. Validate input video exists
+        2. Generate run_id (if not provided)
+        3. Build run directory structure
+        4. Extract frames from the input video using ffmpeg
+        5. Connect to NodeODM (supports multiple hosts)
+        6. Submit ODM task with extracted images
+        7. Poll until completion
+        8. Download all resulting assets
+        9. Optionally copy summary artifacts into processed folder
+
+    This function is the main orchestrator entrypoint.
+
+    Args:
+        cfg (AppConfig):
+            Parsed application configuration loaded from YAML.
+
+        video_path (Path):
+            Path to the input drone video file.
+
+        run_id (Optional[str]):
+            Custom run identifier. If None, a generated ID is used.
+
+        fps (Optional[float]):
+            Override FPS extraction rate.
+            If None, uses cfg.video.fps.
+
+        max_frames (Optional[int]):
+            Override maximum number of extracted frames.
+            If None, uses cfg.video.max_frames.
+
+        start_seconds (Optional[float]):
+            Override extraction start offset (seconds).
+            If None, uses cfg.video.start_seconds.
+
+        duration_seconds (Optional[float]):
+            Override extraction duration (seconds).
+            If None, uses cfg.video.duration_seconds.
+
+        odm_extra_options (Optional[Dict[str, Any]]):
+            Extra ODM options to override config YAML values.
+
+        copy_processed (bool):
+            If True, copy selected key output artifacts into processed_dir.
+
+    Returns:
+        None
+
+    Raises:
+        FileNotFoundError:
+            If the input video file does not exist.
+
+        RuntimeError:
+            If NodeODM fails, the task fails, or assets cannot be downloaded.
+    """
     if not video_path.exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
 

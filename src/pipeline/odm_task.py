@@ -14,12 +14,53 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ODMTaskParams:
+    """
+    Parameters controlling NodeODM task submission and monitoring.
+
+    Attributes:
+        options (Dict[str, Any]):
+            Dictionary of ODM processing options (passed directly to NodeODM).
+            Example:
+                {"dsm": True, "pc-ept": True, "mesh_size": 200000}
+
+        parallel_uploads (int):
+            Number of parallel uploads used when sending images to NodeODM.
+
+        poll_seconds (int):
+            Polling interval (seconds) for checking task status.
+    """
     options: Dict[str, Any]
     parallel_uploads: int
     poll_seconds: int
 
 
 def submit_task(node: Node, images_dir: Path, params: ODMTaskParams):
+    """
+    Submit a photogrammetry task to NodeODM using a folder of extracted images.
+
+    The function scans the given directory for .jpg images, sorts them,
+    and uploads them to NodeODM via pyodm.
+
+    It also logs upload progress every 5%.
+
+    Args:
+        node (Node):
+            Connected pyodm Node instance.
+
+        images_dir (Path):
+            Directory containing extracted frame images (*.jpg).
+
+        params (ODMTaskParams):
+            Task submission parameters including ODM options and upload settings.
+
+    Returns:
+        Task:
+            A pyodm Task object (type depends on pyodm version).
+
+    Raises:
+        ValueError:
+            If no .jpg images are found in the directory.
+    """
     images = sorted(str(p) for p in images_dir.glob("*.jpg"))
     if not images:
         raise ValueError(f"No images found in {images_dir}")
@@ -29,6 +70,15 @@ def submit_task(node: Node, images_dir: Path, params: ODMTaskParams):
     last = {"p": -1}
 
     def on_upload(pct: float):
+        """
+        Upload progress callback used by pyodm.
+
+        Logs progress in increments of 5% to avoid spamming logs.
+
+        Args:
+            pct (float):
+                Upload progress percentage (0-100).
+        """
         p = int(pct)
         if p >= last["p"] + 5:
             last["p"] = p
@@ -47,12 +97,50 @@ def submit_task(node: Node, images_dir: Path, params: ODMTaskParams):
 
 
 def _safe(obj: Any, name: str, default=None):
+    """
+    Safe attribute/dictionary getter.
+
+    This helper supports both dict-based responses and object-based
+    responses (depending on pyodm version).
+
+    Args:
+        obj (Any):
+            Object or dictionary.
+
+        name (str):
+            Attribute or key name.
+
+        default:
+            Value returned if attribute/key is missing.
+
+    Returns:
+        Any:
+            Extracted value or default.
+    """
     if isinstance(obj, dict):
         return obj.get(name, default)
     return getattr(obj, name, default)
 
 
 def _status_to_str(status: Any) -> str:
+    """
+    Convert NodeODM task status into a stable string representation.
+
+    Some pyodm versions return TaskStatus enums, while others return
+    plain strings or dict structures.
+
+    This function normalizes the status value so the pipeline can
+    consistently compare it.
+
+    Args:
+        status (Any):
+            Raw status field returned by task.info().
+
+    Returns:
+        str:
+            Normalized status string such as:
+                "COMPLETED", "FAILED", "CANCELED", "UNKNOWN"
+    """
     """
     pyodm returns TaskStatus enums (ex: <TaskStatus.FAILED: 30>) in some versions.
     Normalize to a stable string.
@@ -70,6 +158,33 @@ def _status_to_str(status: Any) -> str:
 
 
 def wait_for_completion(task, poll_seconds: int, max_connection_errors: int = 30) -> None:
+    """
+    Poll NodeODM until the task finishes (COMPLETED/FAILED/CANCELED).
+
+    This function repeatedly calls `task.info()` until completion.
+    It shows a tqdm progress bar based on NodeODM-reported progress.
+
+    It is resilient to transient connection failures:
+      - NodeConnectionError will be retried up to max_connection_errors times
+      - NodeResponseError (task not found) fails immediately
+
+    Args:
+        task:
+            pyodm Task object returned from node.create_task().
+
+        poll_seconds (int):
+            How many seconds to wait between each poll.
+
+        max_connection_errors (int):
+            Maximum consecutive connection errors allowed before failing.
+
+    Returns:
+        None
+
+    Raises:
+        RuntimeError:
+            If the task fails, is canceled, disappears, or NodeODM becomes unreachable.
+    """
     """
     Poll until COMPLETED/FAILED/CANCELED.
     Retries transient NodeODM connection errors.
@@ -135,6 +250,22 @@ def wait_for_completion(task, poll_seconds: int, max_connection_errors: int = 30
 
 
 def download_assets(task, out_dir: Path) -> None:
+    """
+    Download NodeODM output assets to a local directory.
+
+    This uses pyodm's built-in download_assets method, which downloads
+    all available outputs generated by the ODM pipeline.
+
+    Args:
+        task:
+            pyodm Task object.
+
+        out_dir (Path):
+            Output directory where downloaded results will be stored.
+
+    Returns:
+        None
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     log.info("Downloading ODM assets into %s", out_dir)
     task.download_assets(str(out_dir))
