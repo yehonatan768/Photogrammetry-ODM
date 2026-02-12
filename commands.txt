@@ -1,0 +1,13 @@
+build the docker:
+docker compose up -d --build
+
+run on a specific video:
+docker compose run --rm pipeline python -m src.cli run --video data/raw/videos/Barn.mp4 --fps 1 --max-frames 300
+
+from another terminal - look on the log progress:
+$tasks = (curl.exe -s http://localhost:3000/task/list | ConvertFrom-Json)
+
+foreach ($t in $tasks) {
+    $info = (curl.exe -s "http://localhost:3000/task/$($t.uuid)/info" | ConvertFrom-Json)
+    "{0}  code={1}  progress={2}" -f $t.uuid, $info.status.code, $info.progress
+}

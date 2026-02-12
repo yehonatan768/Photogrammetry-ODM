@@ -1,0 +1,45 @@
+services:
+  nodeodm:
+    image: opendronemap/nodeodm:gpu
+    container_name: nodeodm
+    ports:
+      - "3000:3000"
+    volumes:
+      - nodeodm_data:/var/www/data
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    gpus: all
+
+  nodeodm2:
+    image: opendronemap/nodeodm:gpu
+    container_name: nodeodm2
+    ports:
+      - "3001:3000"
+    volumes:
+      - nodeodm2_data:/var/www/data
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    gpus: all
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: docker/pipeline/Dockerfile
+    container_name: odm_pipeline
+    depends_on:
+      - nodeodm
+      - nodeodm2
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ODM_HOST=http://nodeodm:3000,http://nodeodm2:3000
+      - TZ=Asia/Jerusalem
+    volumes:
+      - ./:/app
+    working_dir: /app
+    gpus: all
+
+volumes:
+  nodeodm_data:
+  nodeodm2_data:

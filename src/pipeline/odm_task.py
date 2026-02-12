@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from pyodm import Node, exceptions
+from tqdm import tqdm
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ODMTaskParams:
+    options: Dict[str, Any]
+    parallel_uploads: int
+    poll_seconds: int
+
+
+def submit_task(node: Node, images_dir: Path, params: ODMTaskParams):
+    images = sorted(str(p) for p in images_dir.glob("*.jpg"))
+    if not images:
+        raise ValueError(f"No images found in {images_dir}")
+
+    log.info("Submitting ODM task with %d images", len(images))
+
+    last = {"p": -1}
+
+    def on_upload(pct: float):
+        p = int(pct)
+        if p >= last["p"] + 5:
+            last["p"] = p
+            log.info("Upload progress: %d%%", p)
+
+    task = node.create_task(
+        files=images,  # IMPORTANT: pyodm expects a list[str], not Path objects
+        options=params.options,
+        parallel_uploads=params.parallel_uploads,
+        progress_callback=on_upload,
+    )
+
+    uuid = getattr(task, "uuid", None) or getattr(task, "task_id", None) or str(task)
+    log.info("Task created: %s", uuid)
+    return task
+
+
+def _safe(obj: Any, name: str, default=None):
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _status_to_str(status: Any) -> str:
+    """
+    pyodm returns TaskStatus enums (ex: <TaskStatus.FAILED: 30>) in some versions.
+    Normalize to a stable string.
+    """
+    if status is None:
+        return "UNKNOWN"
+    # Enum-like: has .name
+    n = getattr(status, "name", None)
+    if isinstance(n, str) and n:
+        return n
+    # Sometimes it's already a string
+    if isinstance(status, str):
+        return status
+    return str(status)
+
+
+def wait_for_completion(task, poll_seconds: int, max_connection_errors: int = 30) -> None:
+    """
+    Poll until COMPLETED/FAILED/CANCELED.
+    Retries transient NodeODM connection errors.
+    """
+    pbar = tqdm(total=100, desc="ODM", unit="%")
+    last_progress = -1
+    consecutive_conn_errors = 0
+
+    uuid = getattr(task, "uuid", None) or getattr(task, "task_id", None)
+
+    while True:
+        try:
+            info = task.info()
+            consecutive_conn_errors = 0
+        except exceptions.NodeConnectionError as e:
+            consecutive_conn_errors += 1
+            log.warning(
+                "NodeODM connection error while polling task %s (%s). Retry %d/%d in %ds...",
+                uuid, e, consecutive_conn_errors, max_connection_errors, poll_seconds
+            )
+            if consecutive_conn_errors >= max_connection_errors:
+                pbar.close()
+                raise RuntimeError(
+                    f"Lost connection to NodeODM while polling task {uuid}. "
+                    f"NodeODM may have crashed or storage may be misconfigured."
+                ) from e
+            time.sleep(poll_seconds)
+            continue
+        except exceptions.NodeResponseError as e:
+            # This is the “<uuid> not found” case.
+            pbar.close()
+            raise RuntimeError(
+                f"NodeODM says task {uuid} was not found. "
+                f"This almost always means the task was not persisted (storage/volume problem) "
+                f"or NodeODM was restarted without persistent /var/www/data.\n"
+                f"Original error: {e}"
+            ) from e
+
+        status_raw = _safe(info, "status")
+        status = _status_to_str(status_raw)
+        progress = int(_safe(info, "progress", 0) or 0)
+        last_error = _safe(info, "last_error", None)
+
+        if progress != last_progress:
+            pbar.n = max(0, min(100, progress))
+            pbar.refresh()
+            last_progress = progress
+
+        if status in ("COMPLETED", "FAILED", "CANCELED"):
+            if status == "COMPLETED":
+                pbar.n = 100
+                pbar.refresh()
+                pbar.close()
+                log.info("ODM task completed.")
+                return
+
+            pbar.close()
+            raise RuntimeError(
+                f"ODM task ended with status={status}. last_error={last_error}. info={info}"
+            )
+
+        time.sleep(poll_seconds)
+
+
+def download_assets(task, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log.info("Downloading ODM assets into %s", out_dir)
+    task.download_assets(str(out_dir))
+    log.info("Download done.")

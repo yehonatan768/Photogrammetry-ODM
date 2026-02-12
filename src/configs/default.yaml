@@ -1,0 +1,40 @@
+project:
+  name: Photogrammetry-ODM
+
+runtime:
+  runs_dir: runs
+  data_dir: data
+  log_level: INFO
+
+odm:
+  host_env: ODM_HOST
+  # Single host example: "http://nodeodm:3000"
+  # Multiple hosts (comma-separated) enable basic load-balancing in the pipeline code:
+  #   "http://nodeodm1:3000,http://nodeodm2:3000"
+  host_default: "http://nodeodm:3000"
+  # With NVMe + local docker networking, higher parallel uploads can reduce idle time.
+  parallel_uploads: 8
+  poll_seconds: 10
+
+video:
+  fps: 2
+  max_frames: 0
+  start_seconds: 0
+  duration_seconds: 0
+
+odm_options:
+  dsm: true
+  dtm: false
+  pc-ept: true
+  cog: true
+  gltf: true
+
+  # Performance tuning (64GB RAM):
+  # ODM uses ~1GB+ RAM per concurrency slot (varies by image size). Start conservative.
+  max_concurrency: 12
+
+  # Quality/performance knobs
+  pc_quality: high
+  feature_quality: high
+  mesh_size: 200000
+  orthophoto_resolution: 5

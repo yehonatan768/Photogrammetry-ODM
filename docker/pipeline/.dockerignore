@@ -1,0 +1,32 @@
+﻿# big data folders
+data/
+runs/
+nodeodm_data/
+outputs/
+logs/
+
+# python/cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# venvs
+.venv/
+venv/
+
+# git + IDE
+.git/
+.vscode/
+.idea/
+
+# archives / media (optional but recommended)
+*.zip
+*.7z
+*.tar
+*.tar.gz
+**/*.mp4
+**/*.mov

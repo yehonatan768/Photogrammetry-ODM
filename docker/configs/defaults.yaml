@@ -1,0 +1,29 @@
+project:
+  name: Photogrammetry-ODM
+
+runtime:
+  runs_dir: runs
+  data_dir: data
+  log_level: INFO
+
+odm:
+  host_env: ODM_HOST
+  host_default: "http://localhost:3000"
+  parallel_uploads: 4
+  poll_seconds: 10
+
+video:
+  fps: 2
+  max_frames: 0         # 0 means unlimited
+  start_seconds: 0      # start offset in seconds
+  duration_seconds: 0   # 0 means full length
+
+odm_options:
+  # Common ODM options. Add more as needed.
+  # You can also pass arbitrary extra options via CLI: --odm-opt key=value
+  dsm: true
+  dtm: false
+  mesh_size: 200000
+  orthophoto_resolution: 5
+  fast_orthophoto: true
+  feature_quality: high
