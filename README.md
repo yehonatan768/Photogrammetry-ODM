@@ -1,75 +1,90 @@
 # Photogrammetry-ODM  
-**Drone video → extracted frames → OpenDroneMap (NodeODM) → downloadable 3D/geo outputs**  
-Runs with **Docker Compose** (NodeODM as a service + a small Python runner container).
+**Drone Video → Frames → OpenDroneMap (NodeODM) → 3D / Geo Outputs (Mesh, Point Cloud, Orthophoto, DSM, etc.)**  
+
+This project provides a **repeatable** and **automated photogrammetry pipeline** using **OpenDroneMap (ODM)** through **NodeODM**, fully containerized with **Docker Compose**.
+
+It supports:
+- Extracting frames from drone videos (`ffmpeg`)
+- Uploading frames to NodeODM
+- Monitoring task progress
+- Downloading full ODM outputs automatically
+- Organizing results into clean timestamped run folders
 
 ---
 
-## 1) What this project does (high level)
+# 1) What this project does (High Level)
 
-Given a drone **video** (MP4/MOV):
+Given a drone **video** (`.mp4` / `.mov`):
 
-1. **Extract frames** with `ffmpeg` at a configurable FPS (and optional time window).
-2. **Submit the extracted images** to a running **NodeODM** instance via **PyODM**.
-3. **Poll task progress** until completion.
-4. **Download ODM outputs** (orthophoto, DSM/DTM, point cloud, mesh, report, etc.).
-5. (Optional) **Copy “summary” artifacts** into `data/processed/...` for convenience.
+1. Extract frames using `ffmpeg`
+2. Submit extracted images to **NodeODM** (via `pyodm`)
+3. Poll the task until completion
+4. Download all ODM results (orthophoto, DSM, mesh, point cloud, etc.)
+5. Optionally copy key artifacts into `data/processed/...`
 
-This repo is built to be **repeatable** (run-id folders, deterministic paths, config-driven defaults) and easy to run on:
-- **Windows 11 + Docker Desktop (WSL2 backend)**  
-- **Linux (Docker Engine + Compose plugin)**
+This repo is designed to be:
+- **Repeatable**
+- **Config-driven**
+- **Cross-platform (Windows / Linux)**
+- **Docker-based (minimal host setup)**
 
 ---
 
-## 2) Needed hardware (recommended)
+# 2) Needed Hardware (Recommended)
 
-Minimum workable (small projects):
+### Minimum workable (small projects)
 - **CPU:** 6+ cores (12 threads recommended)
-- **RAM:** 32 GB (64 GB recommended for larger runs)
-- **Disk:** NVMe recommended (photogrammetry is I/O heavy)
-- **GPU (optional):** NVIDIA GPU with CUDA support (speeds parts of ODM when available)
+- **RAM:** 32 GB (64 GB recommended)
+- **Storage:** SSD strongly recommended
+- **GPU (optional):** NVIDIA CUDA GPU
 
-Good “smooth” setup (medium to large projects):
+### Smooth performance (medium-large datasets)
 - **CPU:** 8–16 cores
 - **RAM:** 64–128 GB
-- **Disk:** NVMe SSD with 100+ GB free per large run
+- **Storage:** NVMe SSD (100+ GB free per run)
 - **GPU:** NVIDIA RTX-class GPU
 
-> Note: NodeODM can run CPU-only. GPU mainly helps some stages and can reduce wall-time, but ODM is still often CPU+RAM bound.
+> NodeODM works CPU-only. GPU can accelerate some steps, but ODM is often CPU/RAM bound.
 
 ---
 
-## 3) Software prerequisites (and versions used here)
+# 3) Software Prerequisites (Versions Used)
 
-### Docker-based runtime (the recommended path)
-This repo is designed around containers, so your host machine mainly needs Docker:
+## Host requirements (recommended runtime: Docker)
 
-**Windows 11**
-- Windows 11 + **WSL2** enabled  
+### Windows 11
+- Windows 11
+- **WSL2 enabled**
 - **Docker Desktop** (WSL2 backend)
-- **NVIDIA driver** that supports WSL2 (only if you want GPU)
-- (Optional) PowerShell 5+ (already present on Windows)
+- NVIDIA WSL2 driver (only if using GPU)
+- PowerShell (already included)
 
-**Linux**
-- **Docker Engine** + **docker compose** plugin
-- (Optional) `nvidia-container-toolkit` (only if you want GPU)
+### Linux
+- Docker Engine
+- Docker Compose plugin (`docker compose`)
+- Optional: `nvidia-container-toolkit` (for GPU)
 
-### Inside the pipeline container
-- **Python:** `3.11` (Dockerfile uses `python:3.11-slim`)
-- **Python packages (pinned):**
+---
+
+## Inside the pipeline container
+- **Python:** 3.11 (`python:3.11-slim`)
+- **ffmpeg:** installed via apt
+- **Pinned packages:**
   - `pyyaml==6.0.2`
   - `pydantic==2.10.6`
   - `requests==2.32.3`
   - `tqdm==4.67.1`
   - `python-dotenv==1.0.1`
   - `pyodm==1.5.9`
-- **ffmpeg:** installed via apt in the container
-
-### NodeODM container
-- `opendronemap/nodeodm:gpu` (runs NodeODM and ODM engine inside)
 
 ---
 
-## 4) Repository layout (project structure)
+## NodeODM container
+- `opendronemap/nodeodm:gpu`
+
+---
+
+# 4) Repository Layout (Project Structure)
 
 ```
 Photogrammetry-ODM/
@@ -104,53 +119,84 @@ Photogrammetry-ODM/
 │  └─ utils/
 │     ├─ hashing.py
 │     └─ subprocess.py
+├─ assets/
+│  ├─ DJI0004.gif
+│  ├─ DJI0004.png
+│  ├─ DJI0449.gif
+│  ├─ DJI0449.png
+│  ├─ Barn.gif
+│  └─ Barn.png
 └─ commands.txt
 ```
 
 ---
 
-## 5) Key paths and outputs
+# 5) Key Paths and Outputs
 
-### Inputs
-- Put your video(s) under:
-  - `data/raw/videos/<your_video>.mp4`
+## Input videos
+Place your drone videos here:
 
-> The folder is created by you (Git does not store large videos). Any path you pass must exist **inside the pipeline container**, which mounts the repo at `/app`.
+```
+data/raw/videos/<your_video>.mp4
+```
 
-### Per-run outputs
-Each run generates a unique `run_id` (timestamp + video hash prefix), stored in:
-
-- **Run directory (main outputs):**
-  - `runs/<run_id>/`
-  - `runs/<run_id>/odm/`  ← full downloaded ODM outputs
-
-- **Frames (intermediate):**
-  - `data/interim/frames/<run_id>/frame_000001.jpg ...`
-
-- **Processed “summary” outputs (optional copy):**
-  - `data/processed/odm_results/<run_id>/`
-  - Copies a few common artifacts when they exist (e.g., orthophoto, DSM, LAZ, OBJ/PLY, report.pdf)
+> Large videos are NOT stored in GitHub, so you must provide them locally.
 
 ---
 
-## 6) Install & setup
+## Outputs per run
+Each run creates a unique `run_id`:
 
-### Option A: Windows 11 (WSL2 + Docker Desktop)
-1. Install Docker Desktop and enable **Use the WSL 2 based engine**.
-2. If using GPU:
-   - Install an NVIDIA driver that supports WSL2
-   - Confirm on host:
+### Main run folder
+```
+runs/<run_id>/
+runs/<run_id>/odm/
+```
+
+### Extracted frames (intermediate)
+```
+data/interim/frames/<run_id>/
+```
+
+### Processed summary outputs (optional)
+```
+data/processed/odm_results/<run_id>/
+```
+
+This folder copies important outputs (if they exist), such as:
+- orthophoto (`.tif`)
+- DSM / DTM
+- point cloud (`.laz`)
+- mesh (`.obj`, `.ply`)
+- report (`report.pdf`)
+
+---
+
+# 6) Install & Setup
+
+## Option A: Windows 11 (Docker Desktop + WSL2)
+
+1. Install Docker Desktop
+2. Enable:
+   - **Use the WSL 2 based engine**
+3. If using GPU:
+   - Install NVIDIA driver that supports WSL2
+   - Validate:
      ```powershell
      nvidia-smi
      ```
-3. Optional but helpful: run the included setup script (it checks WSL, Docker, and GPU):
-   ```powershell
-   # From repo root
-   powershell -ExecutionPolicy Bypass -File .\scripts\setup_and_run_windows11.ps1
-   ```
 
-### Option B: Linux
-Use the helper script (Debian/Ubuntu oriented; adjust for other distros):
+Optional helper script:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_and_run_windows11.ps1
+```
+
+---
+
+## Option B: Linux
+
+Run the helper setup script:
+
 ```bash
 chmod +x scripts/setup_and_run_linux.sh
 ./scripts/setup_and_run_linux.sh
@@ -158,76 +204,96 @@ chmod +x scripts/setup_and_run_linux.sh
 
 ---
 
-## 7) Configuration
+# 7) Configuration
 
-### Main config file
-Default config used by the CLI:
-- `src/configs/default.yaml`
+## Main YAML configuration file
+Default configuration:
+```
+src/configs/default.yaml
+```
 
-Key knobs you’ll likely change:
-- `video.fps`, `video.max_frames`, `video.start_seconds`, `video.duration_seconds`
-- `odm.parallel_uploads`, `odm.poll_seconds`
-- `odm_options.*` (ODM parameters sent to NodeODM)
-
-### NodeODM host selection (single or multi-node)
-The pipeline reads **ODM_HOST** (comma-separated list supported):
-
-- In `docker-compose.yml` the pipeline container is configured with:
-  - `ODM_HOST=http://nodeodm:3000,http://nodeodm2:3000`
-
-The runner will probe each host and pick the least-loaded one.
+### Common settings to adjust
+- `video.fps`
+- `video.max_frames`
+- `video.start_seconds`
+- `video.duration_seconds`
+- `odm.parallel_uploads`
+- `odm.poll_seconds`
+- `odm_options.*`
 
 ---
 
-## 8) Step-by-step workflow (recommended)
+## NodeODM host selection (Multi-node support)
+The pipeline reads an environment variable:
 
-### Terminal #1 — Start services (NodeODM + pipeline build)
+```
+ODM_HOST=http://nodeodm:3000,http://nodeodm2:3000
+```
+
+The runner checks all NodeODM servers and selects the least-loaded one.
+
+---
+
+# 8) Step-by-Step Workflow (Recommended)
+
+## Terminal #1 — Start NodeODM services
 From repo root:
+
 ```powershell
 docker compose up -d --build
 ```
 
 This starts:
-- NodeODM at:
-  - `http://localhost:3000` (container `nodeodm`)
-  - `http://localhost:3001` (container `nodeodm2`)
-- Builds the pipeline image (Python 3.11 + deps + ffmpeg)
+- NodeODM #1 → `http://localhost:3000`
+- NodeODM #2 → `http://localhost:3001`
+- Pipeline container image build (Python + ffmpeg + deps)
 
-### Terminal #2 — Run a pipeline job
+---
+
+## Terminal #2 — Run a pipeline job
+
 Put your video here:
-- `data/raw/videos/Barn.mp4` (example)
+```
+data/raw/videos/Barn.mp4
+```
 
-Run:
+Then run:
+
 ```powershell
 docker compose run --rm pipeline python -m src.cli run --video data/raw/videos/Barn.mp4 --fps 1 --max-frames 300
 ```
 
-Where:
-- `--fps` overrides the YAML FPS
-- `--max-frames 300` caps extracted frames (0 means unlimited)
-
-### What happens during the run
-1. ffmpeg extracts frames into `data/interim/frames/<run_id>/`
-2. frames are uploaded to NodeODM (upload progress logs in ~5% steps)
-3. task is processed; CLI shows a progress bar via `tqdm`
-4. outputs are downloaded to `runs/<run_id>/odm/`
-5. “summary outputs” are copied to `data/processed/odm_results/<run_id>/` (unless disabled)
+Arguments:
+- `--fps 1` → extract 1 frame/sec
+- `--max-frames 300` → cap extracted frames (0 = unlimited)
 
 ---
 
-## 9) Monitoring NodeODM (run in a separate terminal)
+## What happens during execution
+1. Frames extracted via `ffmpeg`
+2. Frames uploaded to NodeODM
+3. Task runs on ODM backend
+4. Progress is displayed with `tqdm`
+5. Outputs downloaded into `runs/<run_id>/odm/`
+6. Optional copy of key outputs into `data/processed/...`
 
-### Quick health check
+---
+
+# 9) Monitoring NodeODM (Recommended)
+
+Run in a separate terminal.
+
+## Health check
 ```powershell
 curl.exe -s http://localhost:3000/info
 ```
 
-### List tasks
+## List tasks
 ```powershell
 curl.exe -s http://localhost:3000/task/list
 ```
 
-### Detailed progress table (PowerShell)
+## Progress table (PowerShell)
 ```powershell
 $tasks = curl.exe -s http://localhost:3000/task/list | ConvertFrom-Json
 
@@ -244,81 +310,98 @@ $tasks | ForEach-Object {
 } | Format-Table -Auto
 ```
 
-NodeODM status codes you’ll commonly see:
+Common NodeODM status codes:
 - `10` = queued
-- `20` = running  
-(Other codes may appear depending on NodeODM/ODM version; the safest indicator is `progress` and `last_error`.)
+- `20` = running
+
+> The most reliable indicator is `progress` and NodeODM logs.
 
 ---
 
-## 10) CLI usage
+# 10) CLI Usage
 
-### Help
+## Help
 ```bash
 docker compose run --rm pipeline python -m src.cli --help
 ```
 
-### Run (minimal)
+---
+
+## Minimal run
 ```bash
 docker compose run --rm pipeline python -m src.cli run --video data/raw/videos/DJI0004.mp4
 ```
 
-### Override extraction window
+---
+
+## Override extraction window
 ```bash
-docker compose run --rm pipeline python -m src.cli run \
-  --video data/raw/videos/Barn.mp4 \
-  --fps 2 \
-  --start-seconds 10 \
-  --duration-seconds 30
+docker compose run --rm pipeline python -m src.cli run   --video data/raw/videos/Barn.mp4   --fps 2   --start-seconds 10   --duration-seconds 30
 ```
 
-### Pass extra ODM options (repeatable)
+---
+
+## Pass extra ODM options
 ```bash
-docker compose run --rm pipeline python -m src.cli run \
-  --video data/raw/videos/Barn.mp4 \
-  --odm-opt feature-quality=ultra \
-  --odm-opt pc-quality=high \
-  --odm-opt mesh-size=300000
+docker compose run --rm pipeline python -m src.cli run   --video data/raw/videos/Barn.mp4   --odm-opt feature-quality=ultra   --odm-opt pc-quality=high   --odm-opt mesh-size=300000
 ```
 
-### Disable copying “processed summary outputs”
+---
+
+## Disable processed-copy stage
 ```bash
 docker compose run --rm pipeline python -m src.cli run --video data/raw/videos/Barn.mp4 --no-copy-processed
 ```
 
 ---
 
-## 11) Script reference (what to use, and when)
+# 11) Script Reference (Recommended Shortcuts)
 
-### Windows PowerShell
-- `scripts/run_pipeline.ps1`
-  - Run any video:
-    ```powershell
-    .\scripts\run_pipeline.ps1 -VideoPath "data/raw/videos/Barn.mp4"
-    ```
-- `scripts/run_dji0004.ps1`
-  - Convenience runner for `data/raw/videos/DJI0004.mp4`
-- `scripts/setup_and_run_windows11.ps1`
-  - Tries to enable/check WSL2, Docker, and GPU; good first-run helper
+## Windows PowerShell scripts
+### Run pipeline on any video
+```powershell
+.\scripts\run_pipeline.ps1 -VideoPath "data/raw/videos/Barn.mp4"
+```
 
-### Linux Bash
-- `scripts/run_pipeline.sh`
-  - Run any video:
-    ```bash
-    ./scripts/run_pipeline.sh data/raw/videos/Barn.mp4
-    ```
-- `scripts/run_dji0004.sh`
-  - Convenience runner for `DJI0004.mp4`
-- `scripts/setup_and_run_linux.sh`
-  - Installs Docker + (optional) NVIDIA runtime toolkit; then runs `DJI0004.mp4`
+### Run DJI0004 preset
+```powershell
+.\scripts\run_dji0004.ps1
+```
+
+### Setup helper (first time)
+```powershell
+.\scripts\setup_and_run_windows11.ps1
+```
 
 ---
 
-## 12) Troubleshooting (common)
+## Linux scripts
+### Run pipeline on any video
+```bash
+./scripts/run_pipeline.sh data/raw/videos/Barn.mp4
+```
 
-### “Task not found” after submit / NodeODM restart
-This is usually a **persistence/volume** issue. NodeODM tasks must persist in `/var/www/data`.
-This repo uses Docker volumes:
+### Run DJI0004 preset
+```bash
+./scripts/run_dji0004.sh
+```
+
+### Setup helper (first time)
+```bash
+./scripts/setup_and_run_linux.sh
+```
+
+---
+
+# 12) Troubleshooting (Common Problems)
+
+## “Task not found” after submit
+Usually caused by missing persistence volume.
+
+NodeODM must persist tasks in:
+- `/var/www/data`
+
+This repo mounts volumes:
 - `nodeodm_data:/var/www/data`
 - `nodeodm2_data:/var/www/data`
 
@@ -328,18 +411,28 @@ docker volume ls
 docker logs nodeodm --tail 200
 ```
 
-### GPU not being used
-If you want GPU acceleration, confirm:
-- Host `nvidia-smi` works
-- Docker GPU passthrough works:
-  ```bash
-  docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
-  ```
-If that fails, NodeODM will still work CPU-only, just slower.
+---
 
-### Very slow progress / “stuck” for long periods
-ODM can spend long time in some stages with minimal progress updates. Monitor:
-- CPU/RAM usage (host task manager / `htop`)
+## GPU not being used
+Validate GPU works on host:
+```bash
+nvidia-smi
+```
+
+Validate Docker GPU passthrough:
+```bash
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
+```
+
+If that fails, NodeODM will still run CPU-only (slower).
+
+---
+
+## “Stuck” at low progress for a long time
+ODM sometimes stays on one stage for a long time.
+
+Monitor:
+- CPU/RAM usage (Task Manager / htop)
 - NodeODM logs:
   ```bash
   docker logs -f nodeodm
@@ -347,12 +440,40 @@ ODM can spend long time in some stages with minimal progress updates. Monitor:
 
 ---
 
-## 13) Notes on customization
+# 📌 Example Results (GIF + PNG)
 
-If you want to make the pipeline more “production-grade”, common upgrades are:
-- Add a **run manifest** (store config + chosen host + ODM task uuid in `runs/<run_id>/`)
-- Save full logs into `runs/<run_id>/logs/`
-- Add a “resume” mode (skip extraction if frames already exist)
-- Add a “download-only” mode (re-download outputs if a run was interrupted)
+Below are example outputs generated from this pipeline (found inside the `assets/` directory):
+
+## DJI0004
+![DJI0004](assets/DJI0004.png)
+
+![DJI0004 Demo](assets/DJI0004.gif)
+
+---
+
+## DJI0449
+![DJI0449](assets/DJI0449.png)
+
+![DJI0449 Demo](assets/DJI0449.gif)
+
+---
+
+## Barn
+![Barn](assets/Barn.png)
+
+![Barn Demo](assets/Barn.gif)
+
+---
+
+# ✅ Summary
+
+This project provides a clean **end-to-end automated ODM photogrammetry workflow**:
+
+- Works from **drone video**
+- Extracts frames automatically
+- Runs ODM through NodeODM
+- Downloads full results
+- Stores clean run-based output folders
+- Includes ready-to-show example renders (PNG + GIF)
 
 ---
